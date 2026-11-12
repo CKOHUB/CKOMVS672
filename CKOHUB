@@ -93,55 +93,133 @@ end end local WindUI;
 local _version = "1.6.66";
 local uiFileName = "WindUI_Cache_v" .. _version .. ".txt";
 local timeFileName = "WindUI_Cache_v" .. _version .. "_Time.txt";
+
 local windUrls = {
-    "https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua",
     "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
-    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+    "https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua"
 };
+
 local function tryLoadWind(code)
-    if not code or #code < 100 then return nil, "codigo vacio" end
-    local fn, err = loadstring(code);
-    if not fn then return nil, err end
-    local ok2, res = pcall(fn);
-    if ok2 and type(res) == "table" then return res, nil end
-    return nil, tostring(res);
+    if type(code) ~= "string" or #code < 100 then
+        return nil, "respuesta de WindUI vacia o incompleta"
+    end
+
+    local fn, compileError = loadstring(code)
+    if not fn then
+        return nil, "error de compilacion: " .. tostring(compileError)
+    end
+
+    local okRun, library = pcall(fn)
+    if not okRun then
+        return nil, "error al ejecutar WindUI: " .. tostring(library)
+    end
+
+    if type(library) ~= "table" or type(library.CreateWindow) ~= "function" then
+        return nil, "WindUI no devolvio una biblioteca valida"
+    end
+
+    return library
 end
-local ok, result = pcall(function()
-    -- cache
-    if isfile and isfile(timeFileName) and isfile(uiFileName) and readfile then
-        local savedTime = tonumber(readfile(timeFileName));
-        if savedTime and (os.time() - savedTime) < 86400 then
-            local res, err = tryLoadWind(readfile(uiFileName));
-            if res then return res end
-            if delfile then pcall(delfile, uiFileName); pcall(delfile, timeFileName); end
-        end
-    end
-    local lastErr = "sin urls";
-    for _, url in ipairs(windUrls) do
-        local okHttp, codigoUi = pcall(function() return game:HttpGet(url) end);
-        if okHttp and codigoUi and #codigoUi > 100 then
-            local res, err = tryLoadWind(codigoUi);
-            if res then
-                if writefile then
-                    pcall(writefile, uiFileName, codigoUi);
-                    pcall(writefile, timeFileName, tostring(os.time()));
-                end
-                return res;
+
+local function downloadWindUI()
+    local errors = {}
+
+    -- Se prueba primero una copia guardada, pero nunca se detiene el script
+    -- si el archivo de cache esta daÃ±ado.
+    if type(isfile) == "function"
+        and type(readfile) == "function"
+        and isfile(uiFileName) then
+
+        local okRead, cachedCode = pcall(readfile, uiFileName)
+        if okRead then
+            local cachedLibrary, cacheError = tryLoadWind(cachedCode)
+            if cachedLibrary then
+                return cachedLibrary
             end
-            lastErr = err;
-        else
-            lastErr = tostring(codigoUi);
+            table.insert(errors, "cache: " .. tostring(cacheError))
         end
     end
-    error(lastErr);
-end);
-if (ok and result and (type(result) == "table")) then
-    WindUI = result;
+
+    for _, url in ipairs(windUrls) do
+        local okHttp, downloadedCode = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if okHttp then
+            local library, loadError = tryLoadWind(downloadedCode)
+            if library then
+                if type(writefile) == "function" then
+                    pcall(writefile, uiFileName, downloadedCode)
+                    pcall(writefile, timeFileName, tostring(os.time()))
+                end
+                return library
+            end
+            table.insert(errors, url .. " -> " .. tostring(loadError))
+        else
+            table.insert(errors, url .. " -> " .. tostring(downloadedCode))
+        end
+    end
+
+    return nil, table.concat(errors, "\n")
+end
+
+local loadOk, loadedLibrary, loadError = pcall(downloadWindUI)
+if loadOk and type(loadedLibrary) == "table" then
+    WindUI = loadedLibrary
 else
-    warn("[CKOHUBV.2] Error al cargar WindUI: " .. tostring(result));
-    warn("[CKOHUBV.2] Prueba borrar el cache WindUI_Cache o usa otro executor (Delta).");
-    return;
-end local Window = WindUI:CreateWindow({Title = "CKOHUBV.2", Author = "oli y chris", Folder = "CKOHUBV2", Acrylic = false, Transparent = false, NewElements = true, HideSearchBar = false, Background = "rbxthumb://type=Asset&id=123933475596283&w=420&h=420", BackgroundImageTransparency = 0.21, OpenButton = {Title = "CKOHUBV.2", Icon = "rbxthumb://type=Asset&id=118232139384203&w=420&h=420", IconSize = 9, CornerRadius = UDim.new(1), StrokeThickness = 2, Enabled = true, Draggable = true, Scale = 0.9, Color = ColorSequence.new(Color3.fromHex("#110070"), Color3.fromHex("#300364"))}, Topbar = {Height = 44, ButtonsType = "Default"}});
+    warn("[CKOHUBV.2] No se pudo cargar WindUI: " ..
+        tostring(loadOk and loadError or loadedLibrary))
+    warn("[CKOHUBV.2] Comprueba la conexion de Delta y que HttpGet/loadstring esten disponibles.")
+    return
+end
+
+local windowConfig = {
+    Title = "CKOHUBV.2",
+    Author = "oli y chris",
+    Folder = "CKOHUBV2",
+    Acrylic = false,
+    Transparent = false,
+    NewElements = true,
+    HideSearchBar = false,
+    Background = "rbxthumb://type=Asset&id=123933475596283&w=420&h=420",
+    BackgroundImageTransparency = 0.21,
+    OpenButton = {
+        Title = "CKOHUBV.2",
+        Icon = "rbxthumb://type=Asset&id=118232139384203&w=420&h=420",
+        IconSize = 9,
+        CornerRadius = UDim.new(1),
+        StrokeThickness = 2,
+        Enabled = true,
+        Draggable = true,
+        Scale = 0.9,
+        Color = ColorSequence.new(Color3.fromHex("#110070"), Color3.fromHex("#300364"))
+    },
+    Topbar = {Height = 44, ButtonsType = "Default"}
+}
+
+local windowOk, Window = pcall(function()
+    return WindUI:CreateWindow(windowConfig)
+end)
+
+-- Configuracion minima de respaldo por si una opcion visual no es compatible
+-- con la version de WindUI que Delta descargo.
+if not windowOk or not Window then
+    warn("[CKOHUBV.2] Reintentando crear la ventana con opciones basicas: " .. tostring(Window))
+    windowOk, Window = pcall(function()
+        return WindUI:CreateWindow({
+            Title = "CKOHUBV.2",
+            Author = "oli y chris",
+            Folder = "CKOHUBV2"
+        })
+    end)
+end
+
+if not windowOk or not Window then
+    warn("[CKOHUBV.2] WindUI cargo, pero no pudo crear la ventana: " .. tostring(Window))
+    return
+end
+
 pcall(function() print("[CKOHUBV.2] UI cargada") end);
 local MainSection = Window:Section({Title = "Funciones Principales", Icon = "solar:star-bold", Opened = true});
 local TrollSection = Window:Section({Title = "Configs & Extra", Icon = "solar:widget-bold", Opened = true});

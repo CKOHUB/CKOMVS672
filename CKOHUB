@@ -93,23 +93,56 @@ end end local WindUI;
 local _version = "1.6.66";
 local uiFileName = "WindUI_Cache_v" .. _version .. ".txt";
 local timeFileName = "WindUI_Cache_v" .. _version .. "_Time.txt";
-local ok, result = pcall(function() local cacheValido = false;
-if (isfile and isfile(timeFileName) and readfile) then local savedTime = tonumber(readfile(timeFileName));
-if (savedTime and ((os.time() - savedTime) < 86400)) then cacheValido = true;
-end end if (cacheValido and isfile and isfile(uiFileName)) then local code = readfile(uiFileName);
-local fn = loadstring(code);
-if fn then return fn();
-elseif delfile then pcall(delfile, uiFileName);
-    pcall(delfile, timeFileName);
-end end local codigoUi = game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua" );
-if writefile then writefile(uiFileName, codigoUi);
-writefile(timeFileName, tostring(os.time()));
-end return loadstring(codigoUi)();
+local windUrls = {
+    "https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua",
+    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+};
+local function tryLoadWind(code)
+    if not code or #code < 100 then return nil, "codigo vacio" end
+    local fn, err = loadstring(code);
+    if not fn then return nil, err end
+    local ok2, res = pcall(fn);
+    if ok2 and type(res) == "table" then return res, nil end
+    return nil, tostring(res);
+end
+local ok, result = pcall(function()
+    -- cache
+    if isfile and isfile(timeFileName) and isfile(uiFileName) and readfile then
+        local savedTime = tonumber(readfile(timeFileName));
+        if savedTime and (os.time() - savedTime) < 86400 then
+            local res, err = tryLoadWind(readfile(uiFileName));
+            if res then return res end
+            if delfile then pcall(delfile, uiFileName); pcall(delfile, timeFileName); end
+        end
+    end
+    local lastErr = "sin urls";
+    for _, url in ipairs(windUrls) do
+        local okHttp, codigoUi = pcall(function() return game:HttpGet(url) end);
+        if okHttp and codigoUi and #codigoUi > 100 then
+            local res, err = tryLoadWind(codigoUi);
+            if res then
+                if writefile then
+                    pcall(writefile, uiFileName, codigoUi);
+                    pcall(writefile, timeFileName, tostring(os.time()));
+                end
+                return res;
+            end
+            lastErr = err;
+        else
+            lastErr = tostring(codigoUi);
+        end
+    end
+    error(lastErr);
 end);
-if (ok and result and (type(result) == "table")) then WindUI = result;
-else warn("Error al cargar WindUI: " .. tostring(result) );
+if (ok and result and (type(result) == "table")) then
+    WindUI = result;
+else
+    warn("[CKOHUBV.2] Error al cargar WindUI: " .. tostring(result));
+    warn("[CKOHUBV.2] Prueba borrar el cache WindUI_Cache o usa otro executor (Delta).");
     return;
-end local Window = WindUI:CreateWindow({Title = "CKOHUBV.2", Author = "chris", Folder = "CKOHUBV.2", Acrylic = false, Transparent = false, NewElements = true, HideSearchBar = false, Background = "rbxthumb://type=Asset&id=123933475596283&w=420&h=420", BackgroundImageTransparency = 0.21, OpenButton = {Title = "CKOHUBV.2", Icon = "rbxthumb://type=Asset&id=118232139384203&w=420&h=420", IconSize = 9, CornerRadius = UDim.new(1), StrokeThickness = 2, Enabled = true, Draggable = true, Scale = 0.9, Color = ColorSequence.new(Color3.fromHex("#110070"), Color3.fromHex("#300364"))}, Topbar = {Height = 44, ButtonsType = "Default"}});
+end local Window = WindUI:CreateWindow({Title = "CKOHUBV.2", Author = "oli y chris", Folder = "CKOHUBV2", Acrylic = false, Transparent = false, NewElements = true, HideSearchBar = false, Background = "rbxthumb://type=Asset&id=123933475596283&w=420&h=420", BackgroundImageTransparency = 0.21, OpenButton = {Title = "CKOHUBV.2", Icon = "rbxthumb://type=Asset&id=118232139384203&w=420&h=420", IconSize = 9, CornerRadius = UDim.new(1), StrokeThickness = 2, Enabled = true, Draggable = true, Scale = 0.9, Color = ColorSequence.new(Color3.fromHex("#110070"), Color3.fromHex("#300364"))}, Topbar = {Height = 44, ButtonsType = "Default"}});
+pcall(function() print("[CKOHUBV.2] UI cargada") end);
 local MainSection = Window:Section({Title = "Funciones Principales", Icon = "solar:star-bold", Opened = true});
 local TrollSection = Window:Section({Title = "Configs & Extra", Icon = "solar:widget-bold", Opened = true});
 local OwnersSection = Window:Section({Title = "Owners", Icon = "solar:crown-bold", Opened = true});
@@ -1016,7 +1049,7 @@ end end});
 UIElements.DropAutoShootPart = Tabs.Aim:Dropdown({Title = "Target: Parte del cuerpo", Values = {"Cabeza", "Torso", "Cuerpo Completo"}, Value = "Cabeza", Callback = function(Value) autoShootTargetPart = Value;
 end});
 Tabs.Aim:Section({Title = "Macro Shoot (Silent)", Icon = "solar:bolt-bold"});
-UIElements.TogMacroShoot = Tabs.Aim:Toggle({Title = "Macro Shoot", Desc = "Saca el arma, dispara con Silent Aim y la guarda. Click o tap para disparar.\nâš  Se recomienda NO activarlo en el lobby, solo en partida.", Value = false, Callback = function(Value)
+UIElements.TogMacroShoot = Tabs.Aim:Toggle({Title = "Macro Shoot", Desc = "Saca el arma, dispara con Silent Aim y la guarda. Click o tap para disparar.\nAVISO: no activar en lobby, solo en partida.", Value = false, Callback = function(Value)
     macroShootEnabled = Value;
     if not Value then
         getgenv().CKOHUBV2TargetPart = nil;

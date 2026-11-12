@@ -115,41 +115,61 @@ end
 
 local WindUI
 local _version = "1.6.66"
-local uiFileName = "WindUI_Cache_v" .. _version .. ".txt"
-local timeFileName = "WindUI_Cache_v" .. _version .. "_Time.txt"
+local uiFileName = "CKOHUB_WindUI_Cache_v" .. _version .. ".txt"
+local timeFileName = "CKOHUB_WindUI_Cache_v" .. _version .. "_Time.txt"
+
+local windUrls = {
+    "https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua",
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+    "https://cdn.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
+}
+
+local function tryLoadWind(code)
+    if not code or #code < 50 then return nil end
+    local fn, err = loadstring(code)
+    if not fn then return nil end
+    local ok2, res = pcall(fn)
+    if ok2 and type(res) == "table" then return res end
+    return nil
+end
 
 local ok, result = pcall(function()
-    local cacheValido = false
-    if isfile and isfile(timeFileName) and readfile then
+    if isfile and isfile(timeFileName) and isfile(uiFileName) and readfile then
         local savedTime = tonumber(readfile(timeFileName))
         if savedTime and (os.time() - savedTime) < 86400 then
-            cacheValido = true
-        end
-    end
-    if cacheValido and isfile and isfile(uiFileName) then
-        local code = readfile(uiFileName)
-        local fn = loadstring(code)
-        if fn then
-            return fn()
-        else
+            local loaded = tryLoadWind(readfile(uiFileName))
+            if loaded then return loaded end
             if delfile then
                 pcall(delfile, uiFileName)
                 pcall(delfile, timeFileName)
             end
         end
     end
-    local codigoUi = game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua")
-    if writefile then
-        writefile(uiFileName, codigoUi)
-        writefile(timeFileName, tostring(os.time()))
+    local lastErr
+    for _, url in ipairs(windUrls) do
+        local okGet, codigoUi = pcall(function() return game:HttpGet(url) end)
+        if okGet and codigoUi and #codigoUi > 50 then
+            local loaded = tryLoadWind(codigoUi)
+            if loaded then
+                if writefile then
+                    pcall(writefile, uiFileName, codigoUi)
+                    pcall(writefile, timeFileName, tostring(os.time()))
+                end
+                return loaded
+            end
+            lastErr = "loadstring/exec fallÃ³"
+        else
+            lastErr = tostring(codigoUi)
+        end
     end
-    return loadstring(codigoUi)()
+    error(lastErr or "No se pudo cargar WindUI")
 end)
 
 if ok and result and type(result) == "table" then
     WindUI = result
 else
-    warn("Error al cargar WindUI: " .. tostring(result))
+    warn("[CKOHUB] Error al cargar WindUI: " .. tostring(result))
+    warn("[CKOHUB] Prueba otro ejecutor o reinicia. Si sigue fallando, usa la version sin WindUI.")
     return
 end
 
@@ -1792,11 +1812,12 @@ Tabs.Aim:Section({ Title = "Macro Shoot (Silent)", Icon = "solar:bolt-bold" })
 
 UIElements.TogMacroShoot = Tabs.Aim:Toggle({
     Title = "Macro Shoot",
-    Desc = "Saca el arma, dispara con Silent Aim de CKOHUB y la guarda. Click o tap.\nAVISO: no activar en lobby, solo en partida.",
+    Desc = "Como Auto Shoot: equipa, Silent Aim, dispara y guarda el arma en bucle.\nAVISO: solo en partida, no en lobby.",
     Value = false,
     Callback = function(Value)
         macroShootEnabled = Value
         if not Value then
+            macroBusy = false
             if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
                 getgenv().CKOHUBTargetPart = nil
             end
@@ -1804,28 +1825,10 @@ UIElements.TogMacroShoot = Tabs.Aim:Toggle({
     end
 })
 
-UIElements.BtnMacroPickWeapon = Tabs.Aim:Button({
-    Title = "Elegir arma en mano",
-    Callback = function()
-        local char = player.Character
-        local tool = char and char:FindFirstChildOfClass("Tool")
-        if tool and not esCuchillo(tool) then
-            macroWeaponName = tool.Name
-            pcall(function()
-                Window:Notify({ Title = "CKOHUB", Content = "Arma macro: " .. tool.Name, Duration = 2 })
-            end)
-        else
-            pcall(function()
-                Window:Notify({ Title = "CKOHUB", Content = "Saca el arma (no cuchillo) primero", Duration = 2 })
-            end)
-        end
-    end
-})
-
 UIElements.SliMacroCooldown = Tabs.Aim:Slider({
     Title = "Macro Cooldown",
     Step = 0.05,
-    Value = { Min = 0.1, Max = 3, Default = 0.9 },
+    Value = { Min = 0.2, Max = 3, Default = 0.9 },
     Callback = function(v)
         MACRO_SHOT_COOLDOWN = v
     end
@@ -1847,13 +1850,22 @@ end
 
 local function macroFindWeapon()
     local backpack = player:FindFirstChildOfClass("Backpack")
-    if not backpack then return nil end
-    if macroWeaponName then
-        local t = backpack:FindFirstChild(macroWeaponName)
-        if t and t:IsA("Tool") then return t end
+    local char = player.Character
+    if char then
+        for _, t in ipairs(char:GetChildren()) do
+            if t:IsA("Tool") and not macroIsKnifeName(t.Name) and (esPistola and esPistola(t) or true) then
+                if not macroIsKnifeName(t.Name) then
+                    local n = t.Name:lower()
+                    if n:find("gun") or n:find("revolver") or n:find("pistol") or n:find("arma") or n:find("sheriff") or (esPistola and esPistola(t)) then
+                        return t
+                    end
+                end
+            end
+        end
     end
+    if not backpack then return nil end
     local gun = obtenerPistola and obtenerPistola() or nil
-    if gun and gun.Parent == backpack then return gun end
+    if gun then return gun end
     local fallback = nil
     for _, t in ipairs(backpack:GetChildren()) do
         if t:IsA("Tool") and not macroIsKnifeName(t.Name) then
@@ -1913,84 +1925,90 @@ local function macroPickSilentTarget()
     return closest
 end
 
-local function runMacroShoot()
-    if not macroShootEnabled or macroBusy then return end
-    if estaEnLobby and estaEnLobby() then
-        pcall(function()
-            Window:Notify({ Title = "CKOHUB", Content = "Macro: no usar en lobby", Duration = 2 })
-        end)
-        return
-    end
-    local char = player.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not char or not hum or hum.Health <= 0 then return end
-    if char:FindFirstChildOfClass("Tool") then return end
-    local weapon = macroFindWeapon()
-    if not weapon or not weapon:IsA("Tool") then return end
-    if weapon.Enabled == false then return end
-    if os.clock() - macroLastShot < MACRO_SHOT_COOLDOWN then return end
-
-    local targetPart = macroPickSilentTarget()
-    if not targetPart then return end
-
-    macroBusy = true
-    local ok = pcall(function()
-        getgenv().CKOHUBTargetPart = targetPart
-        local cycleStart = os.clock()
-        hum:EquipTool(weapon)
-        local t0 = os.clock()
-        while weapon.Parent ~= char and os.clock() - t0 < 0.5 do
-            task.wait()
+-- Macro en bucle (como Auto Shoot): ON = trabaja solo
+task.spawn(function()
+    while true do
+        if not macroShootEnabled then
+            task.wait(0.15)
+            continue
         end
-        if weapon.Parent ~= char then
-            getgenv().CKOHUBTargetPart = nil
-            return
+        if estaEnLobby and estaEnLobby() then
+            task.wait(0.3)
+            continue
         end
-        if MACRO_EQUIP_WAIT > 0 then task.wait(MACRO_EQUIP_WAIT) end
-        if weapon.Parent ~= char or weapon.Enabled == false then
+        if macroBusy then
+            task.wait(0.05)
+            continue
+        end
+        if os.clock() - macroLastShot < MACRO_SHOT_COOLDOWN then
+            task.wait(0.05)
+            continue
+        end
+
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not hum or hum.Health <= 0 then
+            task.wait(0.15)
+            continue
+        end
+
+        local targetPart = macroPickSilentTarget()
+        if not targetPart then
+            if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
+                getgenv().CKOHUBTargetPart = nil
+            end
+            task.wait(0.12)
+            continue
+        end
+
+        local weapon = macroFindWeapon()
+        if not weapon or not weapon:IsA("Tool") then
+            task.wait(0.2)
+            continue
+        end
+
+        macroBusy = true
+        local ok = pcall(function()
+            getgenv().CKOHUBTargetPart = targetPart
+            -- Si el arma esta en backpack, equipar
+            if weapon.Parent ~= char then
+                hum:EquipTool(weapon)
+                local t0 = os.clock()
+                while weapon.Parent ~= char and os.clock() - t0 < 0.5 do
+                    task.wait()
+                end
+            end
+            if weapon.Parent ~= char then
+                getgenv().CKOHUBTargetPart = nil
+                return
+            end
+            if MACRO_EQUIP_WAIT > 0 then task.wait(MACRO_EQUIP_WAIT) end
+
+            local tp = macroPickSilentTarget()
+            if tp then getgenv().CKOHUBTargetPart = tp end
+
+            pcall(function() weapon:Activate() end)
+            if MACRO_EXTRA_CLICK and mouse1click then
+                pcall(mouse1click)
+            end
+            macroLastShot = os.clock()
+
+            local okPing, ping = pcall(function() return player:GetNetworkPing() end)
+            ping = (okPing and ping or 0.05) * 2
+            local waitT = math.max(MACRO_UNEQUIP_DELAY, ping + MACRO_PING_MARGIN)
+            task.wait(waitT)
+
             pcall(function() hum:UnequipTools() end)
-            getgenv().CKOHUBTargetPart = nil
-            return
-        end
-        local tp = macroPickSilentTarget()
-        if tp then getgenv().CKOHUBTargetPart = tp end
-        pcall(function() weapon:Activate() end)
-        if MACRO_EXTRA_CLICK and mouse1click then
-            pcall(mouse1click)
-        end
-        macroLastShot = os.clock()
-        local okPing, ping = pcall(function() return player:GetNetworkPing() end)
-        ping = (okPing and ping or 0.05) * 2
-        local waitT = math.max(MACRO_UNEQUIP_DELAY, ping + MACRO_PING_MARGIN)
-        task.wait(waitT)
-        pcall(function() hum:UnequipTools() end)
-        if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
+
+            if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
+                getgenv().CKOHUBTargetPart = nil
+            end
+        end)
+        if not ok then
             getgenv().CKOHUBTargetPart = nil
         end
-    end)
-    if not ok then
-        getgenv().CKOHUBTargetPart = nil
-    end
-    macroBusy = false
-end
-
-UserInputService.InputBegan:Connect(function(input, processed)
-    if not macroShootEnabled or processed then return end
-    if input.UserInputType == Enum.UserInputType.Touch then
-        macroTouches[input] = { pos = input.Position, t = os.clock() }
-    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-        task.spawn(runMacroShoot)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    local info = macroTouches[input]
-    if not info then return end
-    macroTouches[input] = nil
-    if macroShootEnabled
-        and (input.Position - info.pos).Magnitude < 20
-        and os.clock() - info.t < 0.25 then
-        task.spawn(runMacroShoot)
+        macroBusy = false
+        task.wait(0.05)
     end
 end)
 

@@ -28,15 +28,20 @@ local autoShootTargetPart = "Cabeza"
 local silentAimManualEnabled = false
 local silentAimFovEnabled = false
 local silentAimTargetPart = "Cabeza"
-local macroShootEnabled = false
-local macroBusy = false
-local macroWeaponName = nil
-local macroLastShot = 0
-local MACRO_EQUIP_WAIT = 0
-local MACRO_UNEQUIP_DELAY = 0.1
-local MACRO_SHOT_COOLDOWN = 0.9
-local MACRO_PING_MARGIN = 0.04
-local MACRO_EXTRA_CLICK = false
+
+-- Macro (FER style: toque = equipar, disparar, guardar)
+local Macro = {
+    Enabled = false,
+    WeaponName = nil,
+    EquipWait = 0,
+    UnequipDelay = 0.1,
+    ShotCooldown = 0.9,
+    PingMargin = 0.04,
+    TouchOnly = true,
+    Busy = false,
+    LastShot = 0,
+}
+local MacroStatusLabel = nil
 local macroTouches = {}
 local teamCheckEnabled = true
 local espEnabled = false
@@ -115,62 +120,61 @@ end
 
 local WindUI
 local _version = "1.6.66"
-local uiFileName = "CKOHUB_WindUI_Cache_v" .. _version .. ".txt"
-local timeFileName = "CKOHUB_WindUI_Cache_v" .. _version .. "_Time.txt"
-
-local windUrls = {
-    "https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua",
-    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
-    "https://cdn.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
-}
-
-local function tryLoadWind(code)
-    if not code or #code < 50 then return nil end
-    local fn, err = loadstring(code)
-    if not fn then return nil end
-    local ok2, res = pcall(fn)
-    if ok2 and type(res) == "table" then return res end
-    return nil
-end
+local uiFileName = "WindUI_Cache_v" .. _version .. ".txt"
+local timeFileName = "WindUI_Cache_v" .. _version .. "_Time.txt"
 
 local ok, result = pcall(function()
-    if isfile and isfile(timeFileName) and isfile(uiFileName) and readfile then
+    local cacheValido = false
+    if isfile and isfile(timeFileName) and readfile then
         local savedTime = tonumber(readfile(timeFileName))
         if savedTime and (os.time() - savedTime) < 86400 then
-            local loaded = tryLoadWind(readfile(uiFileName))
-            if loaded then return loaded end
+            cacheValido = true
+        end
+    end
+    if cacheValido and isfile and isfile(uiFileName) then
+        local code = readfile(uiFileName)
+        local fn = loadstring(code)
+        if fn then
+            return fn()
+        else
             if delfile then
                 pcall(delfile, uiFileName)
                 pcall(delfile, timeFileName)
             end
         end
     end
-    local lastErr
-    for _, url in ipairs(windUrls) do
-        local okGet, codigoUi = pcall(function() return game:HttpGet(url) end)
-        if okGet and codigoUi and #codigoUi > 50 then
-            local loaded = tryLoadWind(codigoUi)
-            if loaded then
-                if writefile then
-                    pcall(writefile, uiFileName, codigoUi)
-                    pcall(writefile, timeFileName, tostring(os.time()))
-                end
-                return loaded
-            end
-            lastErr = "loadstring/exec fallÃ³"
-        else
-            lastErr = tostring(codigoUi)
-        end
+    local codigoUi = game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua")
+    if writefile then
+        writefile(uiFileName, codigoUi)
+        writefile(timeFileName, tostring(os.time()))
     end
-    error(lastErr or "No se pudo cargar WindUI")
+    return loadstring(codigoUi)()
 end)
 
 if ok and result and type(result) == "table" then
     WindUI = result
 else
-    warn("[CKOHUB] Error al cargar WindUI: " .. tostring(result))
-    warn("[CKOHUB] Prueba otro ejecutor o reinicia. Si sigue fallando, usa la version sin WindUI.")
-    return
+    -- segundo intento limpiando cache
+    pcall(function()
+        if delfile then
+            pcall(delfile, uiFileName)
+            pcall(delfile, timeFileName)
+        end
+    end)
+    local ok2, result2 = pcall(function()
+        local codigoUi = game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. _version .. "/main.lua")
+        if writefile then
+            writefile(uiFileName, codigoUi)
+            writefile(timeFileName, tostring(os.time()))
+        end
+        return loadstring(codigoUi)()
+    end)
+    if ok2 and result2 and type(result2) == "table" then
+        WindUI = result2
+    else
+        warn("Error al cargar WindUI: " .. tostring(result) .. " | retry: " .. tostring(result2))
+        return
+    end
 end
 
 local Window = WindUI:CreateWindow({
@@ -211,7 +215,7 @@ local Tabs = {
     Animaciones = MainSection:Tab({ Title = "Animaciones", Icon = "solar:smile-circle-bold" }),
     Sonidos = TrollSection:Tab({ Title = "Sonidos", Icon = "solar:speaker-bold" }),
     Guardado = TrollSection:Tab({ Title = "Guardado", Icon = "solar:diskette-bold" }),
-    Music = TrollSection:Tab({ Title = "MÃºsica", Icon = "solar:music-note-2-bold" }),
+    Music = TrollSection:Tab({ Title = "MÃƒÂºsica", Icon = "solar:music-note-2-bold" }),
     Fondos = TrollSection:Tab({ Title = "Fondos", Icon = "solar:gallery-bold" }),
     FondosPlus = TrollSection:Tab({ Title = "Fondos +", Icon = "solar:gallery-wide-bold" }),
     Emotes = TrollSection:Tab({ Title = "Emotes", Icon = "solar:emoji-funny-circle-bold" }),
@@ -1670,7 +1674,7 @@ pcall(function() execName = identifyexecutor and identifyexecutor() or "Desconoc
 
 Tabs.Inicio:Paragraph({
     Title = "Usuario: " .. player.DisplayName,
-    Desc = "Usuario: @" .. player.Name .. "\nID: " .. player.UserId .. "\nEdad de la cuenta: " .. player.AccountAge .. " dÃ­as",
+    Desc = "Usuario: @" .. player.Name .. "\nID: " .. player.UserId .. "\nEdad de la cuenta: " .. player.AccountAge .. " dÃƒÂ­as",
     Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=420&h=420",
     ImageSize = 48
 })
@@ -1684,7 +1688,7 @@ Tabs.Inicio:Paragraph({
     ImageSize = 32
 })
 
-Tabs.Inicio:Section({ Title = "InformaciÃ³n del Servidor", Icon = "solar:server-bold" })
+Tabs.Inicio:Section({ Title = "InformaciÃƒÂ³n del Servidor", Icon = "solar:server-bold" })
 
 local gameNameStr = "Desconocido"
 pcall(function() gameNameStr = MarketplaceService:GetProductInfo(game.PlaceId).Name end)
@@ -1703,7 +1707,7 @@ Tabs.Aim:Section({ Title = "Auto Shoot", Icon = "solar:target-bold" })
 
 UIElements.TogAutoShoot = Tabs.Aim:Toggle({
     Title = "Auto Shoot (Normal - Cabeza/Torso)",
-    Desc = "Dispara automÃ¡ticamente al torso o cabeza sin fallar.",
+    Desc = "Dispara automÃƒÂ¡ticamente al torso o cabeza sin fallar.",
     Callback = function(Value)
         autoShootEnabled = Value
         if not Value and not autoShootAgresivoEnabled then getgenv().CKOHUBTargetPart = nil end
@@ -1712,7 +1716,7 @@ UIElements.TogAutoShoot = Tabs.Aim:Toggle({
 
 UIElements.TogAutoShootAgr = Tabs.Aim:Toggle({
     Title = "Auto Shoot (Agresivo - Hitbox Completa)",
-    Desc = "Dispara a cualquier pÃ­xel visible del cuerpo del enemigo.",
+    Desc = "Dispara a cualquier pÃƒÂ­xel visible del cuerpo del enemigo.",
     Callback = function(Value)
         autoShootAgresivoEnabled = Value
         if not Value and not autoShootEnabled then getgenv().CKOHUBTargetPart = nil end
@@ -1730,7 +1734,7 @@ local equipGunEnabled = false
 
 UIElements.TogEquipGun = Tabs.Aim:Toggle({
     Title = "Equipar pistola",
-    Desc = "Equipa rÃ¡pidamente la pistola.",
+    Desc = "Equipa rÃƒÂ¡pidamente la pistola.",
     Value = false,
     Callback = function(Value)
         equipGunEnabled = Value
@@ -1804,73 +1808,67 @@ task.spawn(function()
 end)
 
 
+
 Tabs.Aim:Space()
 Tabs.Aim:Divider()
 Tabs.Aim:Space()
 
-Tabs.Aim:Section({ Title = "Macro Shoot (Silent)", Icon = "solar:bolt-bold" })
+Tabs.Aim:Section({ Title = "Macro", Icon = "solar:bolt-bold" })
 
-UIElements.TogMacroShoot = Tabs.Aim:Toggle({
-    Title = "Macro Shoot",
-    Desc = "Como Auto Shoot: equipa, Silent Aim, dispara y guarda el arma en bucle.\nAVISO: solo en partida, no en lobby.",
+UIElements.TogMacro = Tabs.Aim:Toggle({
+    Title = "Macro activada",
+    Desc = "Equipa, dispara y guarda al tocar (estilo FER).\nAVISO: solo en partida.",
     Value = false,
-    Callback = function(Value)
-        macroShootEnabled = Value
-        if not Value then
-            macroBusy = false
-            if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
-                getgenv().CKOHUBTargetPart = nil
-            end
+    Callback = function(v)
+        Macro.Enabled = v
+        if not v then
+            Macro.Busy = false
+            if MacroStatusLabel then pcall(function() MacroStatusLabel:SetDesc("Inactiva") end) end
         end
     end
 })
 
-UIElements.SliMacroCooldown = Tabs.Aim:Slider({
-    Title = "Macro Cooldown",
-    Step = 0.05,
-    Value = { Min = 0.2, Max = 3, Default = 0.9 },
+UIElements.TogMacroTouch = Tabs.Aim:Toggle({
+    Title = "Solo toques",
+    Desc = "Off = tambiÃ©n clic izquierdo",
+    Value = true,
     Callback = function(v)
-        MACRO_SHOT_COOLDOWN = v
+        Macro.TouchOnly = v
     end
 })
 
-UIElements.SliMacroUnequip = Tabs.Aim:Slider({
-    Title = "Macro Unequip Delay",
-    Step = 0.05,
-    Value = { Min = 0, Max = 1, Default = 0.1 },
-    Callback = function(v)
-        MACRO_UNEQUIP_DELAY = v
-    end
+MacroStatusLabel = Tabs.Aim:Paragraph({
+    Title = "Estado Macro",
+    Desc = "Inactiva",
 })
 
-local function macroIsKnifeName(name)
-    name = string.lower(tostring(name or ""))
-    return name:find("knife") or name:find("cuchillo") or name:find("blade") or name:find("dagger")
+local function SetMacroStatus(t)
+    if MacroStatusLabel then
+        pcall(function() MacroStatusLabel:SetDesc(t) end)
+    end
 end
 
-local function macroFindWeapon()
+local function macroEsCuchillo(name)
+    name = string.lower(tostring(name or ""))
+    return string.find(name, "knife") or string.find(name, "cuchillo")
+        or string.find(name, "blade") or string.find(name, "dagger")
+end
+
+local function macroBuscarArma()
     local backpack = player:FindFirstChildOfClass("Backpack")
-    local char = player.Character
-    if char then
-        for _, t in ipairs(char:GetChildren()) do
-            if t:IsA("Tool") and not macroIsKnifeName(t.Name) and (esPistola and esPistola(t) or true) then
-                if not macroIsKnifeName(t.Name) then
-                    local n = t.Name:lower()
-                    if n:find("gun") or n:find("revolver") or n:find("pistol") or n:find("arma") or n:find("sheriff") or (esPistola and esPistola(t)) then
-                        return t
-                    end
-                end
-            end
-        end
-    end
     if not backpack then return nil end
+    if Macro.WeaponName then
+        local fixed = backpack:FindFirstChild(Macro.WeaponName)
+        if fixed then return fixed end
+    end
     local gun = obtenerPistola and obtenerPistola() or nil
     if gun then return gun end
-    local fallback = nil
+    local fallback
     for _, t in ipairs(backpack:GetChildren()) do
-        if t:IsA("Tool") and not macroIsKnifeName(t.Name) then
-            local n = t.Name:lower()
-            if n:find("gun") or n:find("revolver") or n:find("pistol") or n:find("arma") or n:find("sheriff") then
+        if t:IsA("Tool") and not macroEsCuchillo(t.Name) then
+            local n = string.lower(t.Name)
+            if string.find(n, "gun") or string.find(n, "revolver") or string.find(n, "pistol")
+            or string.find(n, "arma") or string.find(n, "sheriff") then
                 return t
             end
             fallback = fallback or t
@@ -1879,136 +1877,172 @@ local function macroFindWeapon()
     return fallback
 end
 
-local function macroPickSilentTarget()
-    local char = player.Character
-    if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local head = char:FindFirstChild("Head")
-    local myPos = hrp.Position
-    local headPos = head and head.Position or myPos
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { char }
-    local closest, best = nil, math.huge
-    local partPref = silentAimTargetPart or "Cabeza"
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and esEnemigoValido(p) and p.Character then
-            local partes = {}
-            if partPref == "Cabeza" then
-                local h = p.Character:FindFirstChild("Head")
-                if h then table.insert(partes, h) end
-            elseif partPref == "Torso" then
-                for _, n in ipairs({ "UpperTorso", "Torso", "HumanoidRootPart" }) do
-                    local part = p.Character:FindFirstChild(n)
-                    if part and part:IsA("BasePart") then table.insert(partes, part) end
-                end
-            else
-                for _, part in ipairs(p.Character:GetChildren()) do
-                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        table.insert(partes, part)
-                    end
-                end
-            end
-            for _, part in ipairs(partes) do
-                local dist = (part.Position - myPos).Magnitude
-                if dist < best then
-                    params.FilterDescendantsInstances = { char, p.Character }
-                    if not workspace:Raycast(headPos, part.Position - headPos, params) then
-                        best = dist
-                        closest = part
-                    end
-                end
-            end
-        end
-    end
-    return closest
+local function macroArmaLista(arma)
+    if not arma or not arma:IsA("Tool") then return false end
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    if not backpack or arma.Parent ~= backpack then return false end
+    if arma.Enabled == false then return false end
+    if os.clock() - Macro.LastShot < Macro.ShotCooldown then return false end
+    return true
 end
 
--- Macro en bucle (como Auto Shoot): ON = trabaja solo
-task.spawn(function()
-    while true do
-        if not macroShootEnabled then
-            task.wait(0.15)
-            continue
-        end
-        if estaEnLobby and estaEnLobby() then
-            task.wait(0.3)
-            continue
-        end
-        if macroBusy then
-            task.wait(0.05)
-            continue
-        end
-        if os.clock() - macroLastShot < MACRO_SHOT_COOLDOWN then
-            task.wait(0.05)
-            continue
+local function macroEjecutar()
+    if Macro.Busy or not Macro.Enabled then return end
+    if estaEnLobby and estaEnLobby() then
+        SetMacroStatus("En lobby")
+        return
+    end
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    if char:FindFirstChildOfClass("Tool") then return end
+
+    local arma = macroBuscarArma()
+    if not macroArmaLista(arma) then
+        SetMacroStatus(arma and "Arma no lista" or "Arma no disponible")
+        return
+    end
+
+    Macro.Busy = true
+    local ok, err = pcall(function()
+        SetMacroStatus("Sacando " .. arma.Name)
+        hum:EquipTool(arma)
+        local t0 = os.clock()
+        while arma.Parent ~= char and os.clock() - t0 < 0.5 do task.wait() end
+        if arma.Parent ~= char then
+            SetMacroStatus("No pudo sacarla")
+            return
         end
 
-        local char = player.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not char or not hum or hum.Health <= 0 then
-            task.wait(0.15)
-            continue
+        if Macro.EquipWait > 0 then task.wait(Macro.EquipWait) end
+        if arma.Parent ~= char or arma.Enabled == false then
+            hum:UnequipTools()
+            SetMacroStatus("Arma no lista")
+            return
         end
 
-        local targetPart = macroPickSilentTarget()
-        if not targetPart then
-            if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
-                getgenv().CKOHUBTargetPart = nil
-            end
-            task.wait(0.12)
-            continue
-        end
-
-        local weapon = macroFindWeapon()
-        if not weapon or not weapon:IsA("Tool") then
-            task.wait(0.2)
-            continue
-        end
-
-        macroBusy = true
-        local ok = pcall(function()
-            getgenv().CKOHUBTargetPart = targetPart
-            -- Si el arma esta en backpack, equipar
-            if weapon.Parent ~= char then
-                hum:EquipTool(weapon)
-                local t0 = os.clock()
-                while weapon.Parent ~= char and os.clock() - t0 < 0.5 do
-                    task.wait()
+        -- Silent Aim: apunta al enemigo mÃ¡s cercano (team check)
+        local targetPart = nil
+        do
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local head = char:FindFirstChild("Head")
+            if hrp then
+                local myPos = hrp.Position
+                local origin = head and head.Position or myPos
+                local best = math.huge
+                local partPref = silentAimTargetPart or "Cabeza"
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= player and esEnemigoValido(p) and p.Character then
+                        local parts = {}
+                        if partPref == "Cabeza" then
+                            local h = p.Character:FindFirstChild("Head")
+                            if h then table.insert(parts, h) end
+                        elseif partPref == "Torso" then
+                            for _, n in ipairs({ "UpperTorso", "Torso", "HumanoidRootPart" }) do
+                                local part = p.Character:FindFirstChild(n)
+                                if part and part:IsA("BasePart") then table.insert(parts, part) end
+                            end
+                        else
+                            for _, part in ipairs(p.Character:GetChildren()) do
+                                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                                    table.insert(parts, part)
+                                end
+                            end
+                        end
+                        for _, part in ipairs(parts) do
+                            local dist = (part.Position - myPos).Magnitude
+                            if dist < best then
+                                params.FilterDescendantsInstances = { char, p.Character }
+                                if not workspace:Raycast(origin, part.Position - origin, params) then
+                                    best = dist
+                                    targetPart = part
+                                end
+                            end
+                        end
+                    end
                 end
             end
-            if weapon.Parent ~= char then
-                getgenv().CKOHUBTargetPart = nil
-                return
-            end
-            if MACRO_EQUIP_WAIT > 0 then task.wait(MACRO_EQUIP_WAIT) end
+        end
+        if targetPart then
+            getgenv().CKOHUBTargetPart = targetPart
+        end
 
-            local tp = macroPickSilentTarget()
-            if tp then getgenv().CKOHUBTargetPart = tp end
+        SetMacroStatus("Disparando")
+        pcall(function() arma:Activate() end)
+        if mouse1click then pcall(mouse1click) end
+        Macro.LastShot = os.clock()
 
-            pcall(function() weapon:Activate() end)
-            if MACRO_EXTRA_CLICK and mouse1click then
-                pcall(mouse1click)
-            end
-            macroLastShot = os.clock()
+        local okPing, ping = pcall(function() return player:GetNetworkPing() end)
+        ping = (okPing and ping or 0.05) * 2
+        task.wait(math.max(Macro.UnequipDelay, ping + Macro.PingMargin))
 
-            local okPing, ping = pcall(function() return player:GetNetworkPing() end)
-            ping = (okPing and ping or 0.05) * 2
-            local waitT = math.max(MACRO_UNEQUIP_DELAY, ping + MACRO_PING_MARGIN)
-            task.wait(waitT)
-
-            pcall(function() hum:UnequipTools() end)
-
-            if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
-                getgenv().CKOHUBTargetPart = nil
-            end
-        end)
-        if not ok then
+        hum:UnequipTools()
+        if not silentAimManualEnabled and not silentAimFovEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then
             getgenv().CKOHUBTargetPart = nil
         end
-        macroBusy = false
-        task.wait(0.05)
+        SetMacroStatus("Listo: " .. arma.Name)
+    end)
+    if not ok then SetMacroStatus("Error: " .. tostring(err):sub(1, 40)) end
+    Macro.Busy = false
+end
+
+Tabs.Aim:Button({
+    Title = "Elegir arma en mano",
+    Desc = "Saca el arma y pulsa aquÃ­",
+    Callback = function()
+        local char = player.Character
+        local tool = char and char:FindFirstChildOfClass("Tool")
+        if tool then
+            Macro.WeaponName = tool.Name
+            SetMacroStatus("Arma fijada: " .. tool.Name)
+        else
+            SetMacroStatus("No tienes arma en mano")
+        end
+    end
+})
+
+Tabs.Aim:Button({
+    Title = "Autodetectar arma",
+    Desc = "Vuelve a buscar el arma sola",
+    Callback = function()
+        Macro.WeaponName = nil
+        SetMacroStatus("AutodetecciÃ³n activa")
+    end
+})
+
+Tabs.Aim:Slider({
+    Title = "Retardo al guardar",
+    Step = 0.01,
+    Value = { Min = 0.05, Max = 0.5, Default = 0.1 },
+    Callback = function(v) Macro.UnequipDelay = v end
+})
+
+Tabs.Aim:Slider({
+    Title = "Enfriamiento entre disparos",
+    Step = 0.05,
+    Value = { Min = 0.3, Max = 3, Default = 0.9 },
+    Callback = function(v) Macro.ShotCooldown = v end
+})
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not Macro.Enabled or processed then return end
+    if input.UserInputType == Enum.UserInputType.Touch then
+        macroTouches[input] = { pos = input.Position, t = os.clock() }
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not Macro.TouchOnly then
+        task.spawn(macroEjecutar)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    local info = macroTouches[input]
+    if not info then return end
+    macroTouches[input] = nil
+    if Macro.Enabled
+    and (input.Position - info.pos).Magnitude < 20
+    and os.clock() - info.t < 0.25 then
+        task.spawn(macroEjecutar)
     end
 end)
 
@@ -2036,7 +2070,7 @@ UIElements.DropSilentAimPart = Tabs.Aim:Dropdown({
 
 UIElements.TogSilentAimFOV = Tabs.Aim:Toggle({
     Title = "Silent Aim (Con FOV)",
-    Desc = "Igual que el Silent Aim, pero solo afecta a los enemigos dentro del cÃ­rculo.",
+    Desc = "Igual que el Silent Aim, pero solo afecta a los enemigos dentro del cÃƒÂ­rculo.",
     Callback = function(Value)
         silentAimFovEnabled = Value
         if not Value and not silentAimManualEnabled and not autoShootEnabled and not autoShootAgresivoEnabled then getgenv().CKOHUBTargetPart = nil end
@@ -2044,13 +2078,13 @@ UIElements.TogSilentAimFOV = Tabs.Aim:Toggle({
 })
 
 UIElements.TogShowFOV = Tabs.Aim:Toggle({
-    Title = "Mostrar CÃ­rculo FOV",
-    Desc = "Dibuja un cÃ­rculo en pantalla.",
+    Title = "Mostrar CÃƒÂ­rculo FOV",
+    Desc = "Dibuja un cÃƒÂ­rculo en pantalla.",
     Callback = function(Value) fovVisiblePreference = Value end
 })
 
 UIElements.SliFOVSize = Tabs.Aim:Slider({
-    Title = "TamaÃ±o del FOV",
+    Title = "TamaÃƒÂ±o del FOV",
     Step = 1,
     Value = { Min = 10, Max = 800, Default = 120 },
     Callback = function(v) fovRadius = v end
@@ -2246,7 +2280,7 @@ task.spawn(function()
             if closestTargetPart then
                 getgenv().CKOHUBTargetPart = closestTargetPart
             else
-                if not autoShootEnabled and not autoShootAgresivoEnabled and not macroBusy then
+                if not autoShootEnabled and not autoShootAgresivoEnabled and not Macro.Busy then
                     getgenv().CKOHUBTargetPart = nil
                 end
             end
@@ -2280,15 +2314,15 @@ Tabs.KillAll:Keybind({
 })
 
 Tabs.KillAll:Slider({
-    Title = "VibraciÃ³n",
-    Desc = "VibraciÃ³n corta mientras se acerca",
+    Title = "VibraciÃƒÂ³n",
+    Desc = "VibraciÃƒÂ³n corta mientras se acerca",
     Step = 0.05,
     Value = { Min = 0.0, Max = 3.0, Default = 0.8 },
     Callback = function(v) KILLALL_JITTER_AMPLITUDE = v end
 })
 
 Tabs.KillAll:Slider({
-    Title = "Radio de ActivaciÃ³n",
+    Title = "Radio de ActivaciÃƒÂ³n",
     Desc = "Distancia en la que se activa",
     Step = 0.5,
     Value = { Min = 2.75, Max = 9.0, Default = 6.0 },
@@ -2302,7 +2336,7 @@ Tabs.KillAll:Section({ Title = "Hitbox Expander", Icon = "solar:box-bold" })
 
 Tabs.KillAll:Toggle({
     Title = "Activar Hitbox",
-    Desc = "AÃ±ade una hitbox cÃºbica a los enemigos.",
+    Desc = "AÃƒÂ±ade una hitbox cÃƒÂºbica a los enemigos.",
     Value = false,
     Callback = function(Value)
         hitboxEnabled = Value
@@ -2318,7 +2352,7 @@ Tabs.KillAll:Toggle({
 })
 
 Tabs.KillAll:Slider({
-    Title = "TamaÃ±o de la Hitbox",
+    Title = "TamaÃƒÂ±o de la Hitbox",
     Step = 0.5,
     Value = { Min = 1.0, Max = 18.0, Default = 3.5 },
     Callback = function(v) hitboxSize = v end
@@ -2351,7 +2385,7 @@ local autoTPMainToggle, autoTPAltToggle
 
 autoTPMainToggle = Tabs.RachaFarm:Toggle({
     Title = "Auto Teleport (Main)",
-    Desc = "Te teletransporta a la plataforma Main. Se desactiva si activÃ¡s Alt.",
+    Desc = "Te teletransporta a la plataforma Main. Se desactiva si activÃƒÂ¡s Alt.",
     Value = false,
     Callback = function(value)
         if value then
@@ -2370,7 +2404,7 @@ autoTPMainToggle = Tabs.RachaFarm:Toggle({
 
 autoTPAltToggle = Tabs.RachaFarm:Toggle({
     Title = "Auto Teleport (Alt)",
-    Desc = "Te teletransporta a la plataforma Alt. Se desactiva si activÃ¡s Main.",
+    Desc = "Te teletransporta a la plataforma Alt. Se desactiva si activÃƒÂ¡s Main.",
     Value = false,
     Callback = function(value)
         if value then
@@ -2409,7 +2443,7 @@ Tabs.RachaFarm:Dropdown({
     end
 })
 
-Tabs.Vis:Section({ Title = "ConfiguraciÃ³n de ESP", Icon = "solar:eye-bold" })
+Tabs.Vis:Section({ Title = "ConfiguraciÃƒÂ³n de ESP", Icon = "solar:eye-bold" })
 
 UIElements.TogEsp = Tabs.Vis:Toggle({
     Title = "ESP Jugadores",
@@ -2846,7 +2880,7 @@ local KillSounds = {
     { Name = "OwO",             Id = "71942674274967" },
     { Name = "SEMPAI >.<",      Id = "115498703521334" },
     { Name = "Ahhh:3",          Id = "83559496188823" },
-    { Name = "Ã±yaa >//~//<",    Id = "78798011197804" },
+    { Name = "ÃƒÂ±yaa >//~//<",    Id = "78798011197804" },
 }
 
 local KillSoundPlayer = Instance.new("Sound")
@@ -2858,7 +2892,7 @@ KillSoundPlayer.Parent = SoundService
 local ShootReloadOptions = {
     ["Revolver + Recarga"]     = { Shoot = "680140087",       Reload = "138084889" },
     ["Magia de Anime"]         = { Shoot = "109296938403067", Reload = nil },
-    ["LÃ¡ser + Recarga lÃ¡ser"]  = { Shoot = "4400449399",      Reload = "129456040607483" },
+    ["LÃƒÂ¡ser + Recarga lÃƒÂ¡ser"]  = { Shoot = "4400449399",      Reload = "129456040607483" },
 }
 local SelectedShootReload = "Revolver + Recarga"
 
@@ -3162,7 +3196,7 @@ Tabs.Sonidos:Toggle({
 
 Tabs.Sonidos:Dropdown({
     Title = "Sonido de disparo",
-    Values = { "Revolver + Recarga", "Magia de Anime", "LÃ¡ser + Recarga lÃ¡ser" },
+    Values = { "Revolver + Recarga", "Magia de Anime", "LÃƒÂ¡ser + Recarga lÃƒÂ¡ser" },
     Value = "Revolver + Recarga",
     Callback = function(selected) SelectedShootReload = selected end
 })
@@ -3186,19 +3220,19 @@ MusicPlayer.Volume = 0.5
 MusicPlayer.Parent = SoundService
 
 local SongList = {
-    { Name = "CanciÃ³n 1", Id = "84944985070181" },
-    { Name = "CanciÃ³n 2", Id = "87570666848900" },
-    { Name = "CanciÃ³n 3", Id = "82746224492420" },
-    { Name = "CanciÃ³n 4", Id = "71393805905055" },
-    { Name = "CanciÃ³n 5", Id = "75688616622595" },
-    { Name = "CanciÃ³n 6", Id = "135609653444873" },
-    { Name = "CanciÃ³n 7", Id = "93699644879957" },
-    { Name = "CanciÃ³n 8", Id = "110398343528156" },
-    { Name = "CanciÃ³n 9", Id = "138863509657081" },
-    { Name = "CanciÃ³n 10", Id = "115440201770223" },
-    { Name = "CanciÃ³n 11", Id = "128048502331483" },
-    { Name = "CanciÃ³n 12", Id = "135321902579514" },
-    { Name = "CanciÃ³n 13", Id = "131465489873214" },
+    { Name = "CanciÃƒÂ³n 1", Id = "84944985070181" },
+    { Name = "CanciÃƒÂ³n 2", Id = "87570666848900" },
+    { Name = "CanciÃƒÂ³n 3", Id = "82746224492420" },
+    { Name = "CanciÃƒÂ³n 4", Id = "71393805905055" },
+    { Name = "CanciÃƒÂ³n 5", Id = "75688616622595" },
+    { Name = "CanciÃƒÂ³n 6", Id = "135609653444873" },
+    { Name = "CanciÃƒÂ³n 7", Id = "93699644879957" },
+    { Name = "CanciÃƒÂ³n 8", Id = "110398343528156" },
+    { Name = "CanciÃƒÂ³n 9", Id = "138863509657081" },
+    { Name = "CanciÃƒÂ³n 10", Id = "115440201770223" },
+    { Name = "CanciÃƒÂ³n 11", Id = "128048502331483" },
+    { Name = "CanciÃƒÂ³n 12", Id = "135321902579514" },
+    { Name = "CanciÃƒÂ³n 13", Id = "131465489873214" },
 }
 
 local CurrentIndex = 1
@@ -3210,7 +3244,7 @@ local function OptionLabel(song) return song.Name .. " (" .. song.Id .. ")" end
 local function UpdateNowPlaying()
     local song = SongList[CurrentIndex]
     if song and NowPlayingParagraph then
-        NowPlayingParagraph:SetDesc(("%s â€¢ ID: %s â€¢ %s"):format(song.Name, song.Id, MusicPlayer.Playing and "Reproduciendo" or "Pausado"))
+        NowPlayingParagraph:SetDesc(("%s Ã¢â‚¬Â¢ ID: %s Ã¢â‚¬Â¢ %s"):format(song.Name, song.Id, MusicPlayer.Playing and "Reproduciendo" or "Pausado"))
     end
 end
 
@@ -3263,20 +3297,20 @@ end
 MusicPlayer.Ended:Connect(function() NextSong() end)
 
 Tabs.Music:Section({ Title = "Ahora suena", Icon = "solar:music-note-bold" })
-NowPlayingParagraph = Tabs.Music:Paragraph({ Title = "Sin canciÃ³n seleccionada", Desc = "Presiona Reproducir para comenzar", Icon = "solar:music-note-2-bold" })
+NowPlayingParagraph = Tabs.Music:Paragraph({ Title = "Sin canciÃƒÂ³n seleccionada", Desc = "Presiona Reproducir para comenzar", Icon = "solar:music-note-2-bold" })
 
 Tabs.Music:Section({ Title = "Controles", Icon = "solar:tuning-2-bold" })
-Tabs.Music:Button({ Title = "Anterior", Desc = "Retrocede a la canciÃ³n previa", Icon = "solar:skip-previous-bold", Variant = "Secondary", Callback = function() PrevSong() end })
-Tabs.Music:Button({ Title = "Siguiente", Desc = "Avanza a la siguiente canciÃ³n", Icon = "solar:skip-next-bold", Variant = "Secondary", Callback = function() NextSong() end })
-Tabs.Music:Button({ Title = "Reproducir", Desc = "Inicia o reanuda la canciÃ³n actual", Icon = "solar:play-circle-bold", Variant = "Primary", Callback = function() PlaySong() end })
-Tabs.Music:Button({ Title = "Pausar", Desc = "Pausa la reproducciÃ³n sin perder el avance", Icon = "solar:pause-circle-bold", Variant = "Secondary", Callback = function() PauseSong() end })
-Tabs.Music:Button({ Title = "Detener", Desc = "Corta la mÃºsica por completo", Icon = "solar:close-circle-bold", Variant = "Danger", Callback = function() StopSong() end })
+Tabs.Music:Button({ Title = "Anterior", Desc = "Retrocede a la canciÃƒÂ³n previa", Icon = "solar:skip-previous-bold", Variant = "Secondary", Callback = function() PrevSong() end })
+Tabs.Music:Button({ Title = "Siguiente", Desc = "Avanza a la siguiente canciÃƒÂ³n", Icon = "solar:skip-next-bold", Variant = "Secondary", Callback = function() NextSong() end })
+Tabs.Music:Button({ Title = "Reproducir", Desc = "Inicia o reanuda la canciÃƒÂ³n actual", Icon = "solar:play-circle-bold", Variant = "Primary", Callback = function() PlaySong() end })
+Tabs.Music:Button({ Title = "Pausar", Desc = "Pausa la reproducciÃƒÂ³n sin perder el avance", Icon = "solar:pause-circle-bold", Variant = "Secondary", Callback = function() PauseSong() end })
+Tabs.Music:Button({ Title = "Detener", Desc = "Corta la mÃƒÂºsica por completo", Icon = "solar:close-circle-bold", Variant = "Danger", Callback = function() StopSong() end })
 
-Tabs.Music:Section({ Title = "Seleccionar mÃºsica", Icon = "solar:playlist-bold" })
+Tabs.Music:Section({ Title = "Seleccionar mÃƒÂºsica", Icon = "solar:playlist-bold" })
 local SongDropdown
 SongDropdown = Tabs.Music:Dropdown({
-    Title = "CanciÃ³n",
-    Desc = "Elige una canciÃ³n de la lista para reproducirla",
+    Title = "CanciÃƒÂ³n",
+    Desc = "Elige una canciÃƒÂ³n de la lista para reproducirla",
     Icon = "solar:music-note-bold",
     Values = (function()
         local options = {}
@@ -3290,14 +3324,14 @@ SongDropdown = Tabs.Music:Dropdown({
     end,
 })
 
-Tabs.Music:Section({ Title = "Preferencias de reproducciÃ³n", Icon = "solar:settings-bold" })
-Tabs.Music:Toggle({ Title = "ReproducciÃ³n aleatoria", Desc = "Elige una canciÃ³n al azar cada vez que avanza", Value = false, Callback = function(state) ShuffleOn = state end })
-Tabs.Music:Toggle({ Title = "Repetir canciÃ³n", Desc = "Vuelve a reproducir la misma canciÃ³n al terminar", Value = false, Callback = function(state) MusicPlayer.Looped = state end })
-Tabs.Music:Slider({ Title = "Volumen", Desc = "Ajusta quÃ© tan fuerte suena la mÃºsica", Icon = "solar:volume-loud-bold", Value = { Min = 0, Max = 100, Default = 50 }, Callback = function(value) MusicPlayer.Volume = value / 100 end })
+Tabs.Music:Section({ Title = "Preferencias de reproducciÃƒÂ³n", Icon = "solar:settings-bold" })
+Tabs.Music:Toggle({ Title = "ReproducciÃƒÂ³n aleatoria", Desc = "Elige una canciÃƒÂ³n al azar cada vez que avanza", Value = false, Callback = function(state) ShuffleOn = state end })
+Tabs.Music:Toggle({ Title = "Repetir canciÃƒÂ³n", Desc = "Vuelve a reproducir la misma canciÃƒÂ³n al terminar", Value = false, Callback = function(state) MusicPlayer.Looped = state end })
+Tabs.Music:Slider({ Title = "Volumen", Desc = "Ajusta quÃƒÂ© tan fuerte suena la mÃƒÂºsica", Icon = "solar:volume-loud-bold", Value = { Min = 0, Max = 100, Default = 50 }, Callback = function(value) MusicPlayer.Volume = value / 100 end })
 
-Tabs.Music:Section({ Title = "IDs de mÃºsica", Icon = "solar:playlist-bold" })
+Tabs.Music:Section({ Title = "IDs de mÃƒÂºsica", Icon = "solar:playlist-bold" })
 local NewName, NewId = "", ""
-Tabs.Music:Input({ Title = "Nombre de la canciÃ³n", Icon = "solar:text-field-bold", Placeholder = "Ej: Mi canciÃ³n", Callback = function(value) NewName = value end })
+Tabs.Music:Input({ Title = "Nombre de la canciÃƒÂ³n", Icon = "solar:text-field-bold", Placeholder = "Ej: Mi canciÃƒÂ³n", Callback = function(value) NewName = value end })
 Tabs.Music:Input({ Title = "ID de Roblox (rbxassetid)", Icon = "solar:hashtag-bold", Placeholder = "Ej: 1234567890", Callback = function(value) NewId = value end })
 
 local function RefreshDropdownOptions()
@@ -3307,7 +3341,7 @@ local function RefreshDropdownOptions()
 end
 
 Tabs.Music:Button({
-    Title = "AÃ±adir canciÃ³n",
+    Title = "AÃƒÂ±adir canciÃƒÂ³n",
     Desc = "Guarda el nombre e ID escritos arriba en la lista",
     Icon = "solar:add-circle-bold",
     Variant = "Primary",
@@ -3329,14 +3363,14 @@ local Backgrounds = {
     { Name = "Fondo 5", ID = "14653905878", Reference = "rbxthumb://type=Asset&id=14653905878&w=420&h=420" },
     { Name = "Fondo 6", ID = "14397445471", Reference = "rbxthumb://type=Asset&id=14397445471&w=420&h=420" },
 
-    -- Fondos extra: IDs publicados en catÃ¡logos pÃºblicos de decals de Roblox.
+    -- Fondos extra: IDs publicados en catÃƒÂ¡logos pÃƒÂºblicos de decals de Roblox.
     { Name = "SIGMA Grindset", ID = "11600511955", Reference = "rbxthumb://type=Asset&id=11600511955&w=420&h=420" },
     { Name = "Giga Chad", ID = "10590477450", Reference = "rbxthumb://type=Asset&id=10590477450&w=420&h=420" },
-    { Name = "Doge clÃ¡sico", ID = "631727250", Reference = "rbxthumb://type=Asset&id=631727250&w=420&h=420" },
+    { Name = "Doge clÃƒÂ¡sico", ID = "631727250", Reference = "rbxthumb://type=Asset&id=631727250&w=420&h=420" },
     { Name = "Pop Cat", ID = "10800748312", Reference = "rbxthumb://type=Asset&id=10800748312&w=420&h=420" },
     { Name = "Perro meme", ID = "9835676498", Reference = "rbxthumb://type=Asset&id=9835676498&w=420&h=420" },
     { Name = "Gato con arma", ID = "5205790826", Reference = "rbxthumb://type=Asset&id=5205790826&w=420&h=420" },
-    { Name = "Gato meme clÃ¡sico", ID = "78969295", Reference = "rbxthumb://type=Asset&id=78969295&w=420&h=420" },
+    { Name = "Gato meme clÃƒÂ¡sico", ID = "78969295", Reference = "rbxthumb://type=Asset&id=78969295&w=420&h=420" },
     { Name = "Rickroll", ID = "6403436082", Reference = "rbxthumb://type=Asset&id=6403436082&w=420&h=420" },
     { Name = "The Rock meme", ID = "8425069728", Reference = "rbxthumb://type=Asset&id=8425069728&w=420&h=420" },
     { Name = "Epic Face Roblox", ID = "109251560", Reference = "rbxthumb://type=Asset&id=109251560&w=420&h=420" },
@@ -3348,7 +3382,7 @@ local Backgrounds = {
     { Name = "Anime chica", ID = "6675147490", Reference = "rbxthumb://type=Asset&id=6675147490&w=420&h=420" },
     { Name = "Anime oscuro", ID = "10341849885", Reference = "rbxthumb://type=Asset&id=10341849885&w=420&h=420" },
     { Name = "Luffy One Piece", ID = "10511856020", Reference = "rbxthumb://type=Asset&id=10511856020&w=420&h=420" },
-    { Name = "TripulaciÃ³n One Piece", ID = "9478562327", Reference = "rbxthumb://type=Asset&id=9478562327&w=420&h=420" },
+    { Name = "TripulaciÃƒÂ³n One Piece", ID = "9478562327", Reference = "rbxthumb://type=Asset&id=9478562327&w=420&h=420" },
     { Name = "Gojo JJK", ID = "9242918232", Reference = "rbxthumb://type=Asset&id=9242918232&w=420&h=420" },
     { Name = "Makima Chainsaw Man", ID = "11902680347", Reference = "rbxthumb://type=Asset&id=11902680347&w=420&h=420" },
     { Name = "Goku Ultra Instinto", ID = "7625033282", Reference = "rbxthumb://type=Asset&id=7625033282&w=420&h=420" },
@@ -3455,7 +3489,7 @@ Tabs.Fondos:Button({
     Title = "Aplicar fondo de CKOHUB",
     Callback = function()
         if not ApplySelectedBackground() then
-            warn("No se encontrÃ³ el fondo de WindUI.")
+            warn("No se encontrÃƒÂ³ el fondo de WindUI.")
         end
     end
 })
@@ -3472,7 +3506,7 @@ Tabs.FondosPlus:Paragraph({
 
 FondoPlusDropdown = Tabs.FondosPlus:Dropdown({
     Title = "Elegir fondo",
-    Desc = "Sigma, Giga Chad, memes, anime, kawaii, gaming y mÃ¡s.",
+    Desc = "Sigma, Giga Chad, memes, anime, kawaii, gaming y mÃƒÂ¡s.",
     Values = FondoNames,
     Value = FondoPlusSeleccionado.Name,
     Callback = function(Value)
@@ -3494,7 +3528,7 @@ Tabs.FondosPlus:Button({
     Callback = function()
         SelectedFondo = FondoPlusSeleccionado
         if not ApplySelectedBackground() then
-            warn("CKOHUB: no se encontrÃ³ la capa de fondo de WindUI.")
+            warn("CKOHUB: no se encontrÃƒÂ³ la capa de fondo de WindUI.")
         end
     end
 })
@@ -3646,7 +3680,7 @@ local NewEmoteName, NewEmoteId = "", ""
 local NewEmoteLoop = true
 Tabs.Emotes:Input({ Title = "Nombre del emote", Icon = "solar:text-field-bold", Placeholder = "Ej: Mi emote", Callback = function(value) NewEmoteName = value end })
 Tabs.Emotes:Input({ Title = "ID de Roblox (rbxassetid)", Icon = "solar:hashtag-bold", Placeholder = "Ej: 1234567890", Callback = function(value) NewEmoteId = value end })
-Tabs.Emotes:Toggle({ Title = "Repetir en bucle", Desc = "ActÃ­valo solo si el emote es un baile hecho para loopearse", Value = true, Callback = function(state) NewEmoteLoop = state end })
+Tabs.Emotes:Toggle({ Title = "Repetir en bucle", Desc = "ActÃƒÂ­valo solo si el emote es un baile hecho para loopearse", Value = true, Callback = function(state) NewEmoteLoop = state end })
 
 local function RefreshEmoteDropdown()
     local options = {}
@@ -3655,7 +3689,7 @@ local function RefreshEmoteDropdown()
 end
 
 Tabs.Emotes:Button({
-    Title = "AÃ±adir emote",
+    Title = "AÃƒÂ±adir emote",
     Desc = "Guarda el nombre, ID y loop en la lista",
     Icon = "solar:add-circle-bold",
     Variant = "Primary",
@@ -3877,18 +3911,18 @@ Tabs.Items:Toggle({
 Tabs.Com:Section({ Title = "Comunidad", Icon = "solar:chat-line-bold" })
 
 Tabs.Com:Paragraph({
-    Title = "Ãšnete a los grupos para no perderte las novedades de CKOHUB.",
+    Title = "ÃƒÅ¡nete a los grupos para no perderte las novedades de CKOHUB.",
     Desc = "",
 })
 
 Tabs.Com:Paragraph({
-    Title = "Ãšnete al servidor de Discord",
-    Desc = "Haz clic en el botÃ³n de abajo para copiar el link de invitaciÃ³n de Discord.",
+    Title = "ÃƒÅ¡nete al servidor de Discord",
+    Desc = "Haz clic en el botÃƒÂ³n de abajo para copiar el link de invitaciÃƒÂ³n de Discord.",
     Thumbnail = "rbxthumb://type=Asset&id=134340713001451&w=420&h=420",
     ThumbnailSize = 128,
     Buttons = {
         {
-            Title = "Copiar invitaciÃ³n de Discord",
+            Title = "Copiar invitaciÃƒÂ³n de Discord",
             Callback = function()
                 pcall(function()
                     if setclipboard then
@@ -3907,8 +3941,8 @@ Tabs.Com:Paragraph({
 })
 
 Tabs.Avisos:Section({ Title = "Aviso", Icon = "solar:shield-warning-bold" })
-Tabs.Avisos:Paragraph({ Title = "El kill all sigue en fase beta, no es recomendable en sv pÃºblico.", Desc = "" })
-Tabs.Avisos:Paragraph({ Title = "oli y chris no se hacen responsables si resultas baneado del juego, Ãºsalo bajo tu propia responsabilidad.", Desc = "" })
+Tabs.Avisos:Paragraph({ Title = "El kill all sigue en fase beta, no es recomendable en sv pÃƒÂºblico.", Desc = "" })
+Tabs.Avisos:Paragraph({ Title = "oli y chris no se hacen responsables si resultas baneado del juego, ÃƒÂºsalo bajo tu propia responsabilidad.", Desc = "" })
 
 Tabs.Avisos:Section({ Title = "Teclas", Icon = "solar:keyboard-bold" })
 
@@ -3959,7 +3993,7 @@ local selectedConfig = "Ninguna"
 local customConfigName = ""
 
 local configDropdown = Tabs.Guardado:Dropdown({
-    Title = "Seleccionar ConfiguraciÃ³n",
+    Title = "Seleccionar ConfiguraciÃƒÂ³n",
     Values = availableConfigs,
     Value = "Ninguna",
     Callback = function(Value) selectedConfig = Value end
@@ -4016,7 +4050,7 @@ Tabs.Guardado:Button({
         else
             deleteConfirmPending = true
             deleteConfirmTime = now
-            showBottomMessage("Â¿Seguro? Presiona de nuevo para confirmar.")
+            showBottomMessage("Ã‚Â¿Seguro? Presiona de nuevo para confirmar.")
         end
     end
 })
@@ -4027,14 +4061,14 @@ local function secureLoadToggle(element, val)
 end
 
 Tabs.Guardado:Button({
-    Title = "Guardar ConfiguraciÃ³n",
+    Title = "Guardar ConfiguraciÃƒÂ³n",
     Icon = "solar:diskette-bold",
     Variant = "Primary",
     Callback = function()
         local finalName = customConfigName:gsub("[^%w%s%-]", "")
         if finalName == "" then finalName = selectedConfig end
         if finalName == "" or finalName == "Ninguna" then
-            showBottomMessage("Escribe un nombre para guardar la configuraciÃ³n.")
+            showBottomMessage("Escribe un nombre para guardar la configuraciÃƒÂ³n.")
             return
         end
         local path = configFolder .. "/" .. finalName .. ".json"
@@ -4046,7 +4080,7 @@ Tabs.Guardado:Button({
                 ["Equipar pistola"] = equipGunEnabled,
                 ["Silent Aim (Manual)"] = silentAimManualEnabled,
                 ["Silent Aim (FOV)"] = silentAimFovEnabled,
-                ["Mostrar CÃ­rculo FOV"] = fovVisiblePreference,
+                ["Mostrar CÃƒÂ­rculo FOV"] = fovVisiblePreference,
                 ["ESP Jugadores"] = espEnabled,
                 ["ESP Glow"] = espSettings.Glow,
                 ["Kill All"] = KillAllEnabled,
@@ -4057,8 +4091,8 @@ Tabs.Guardado:Button({
                 ["Korblox"] = KorbloxEnabled
             },
             Sliders = {
-                ["TamaÃ±o del FOV"] = fovRadius,
-                ["TamaÃ±o de Hitbox"] = hitboxSize,
+                ["TamaÃƒÂ±o del FOV"] = fovRadius,
+                ["TamaÃƒÂ±o de Hitbox"] = hitboxSize,
                 ["Volumen Kill Sound"] = KillSoundVolume
             },
             Colors = {
@@ -4088,12 +4122,12 @@ Tabs.Guardado:Button({
 })
 
 Tabs.Guardado:Button({
-    Title = "Cargar ConfiguraciÃ³n",
+    Title = "Cargar ConfiguraciÃƒÂ³n",
     Icon = "solar:folder-open-bold",
     Variant = "Primary",
     Callback = function()
         if selectedConfig == "Ninguna" or selectedConfig == "" then
-            showBottomMessage("No hay ninguna configuraciÃ³n seleccionada.")
+            showBottomMessage("No hay ninguna configuraciÃƒÂ³n seleccionada.")
             return
         end
         local path = configFolder .. "/" .. selectedConfig .. ".json"
@@ -4106,7 +4140,7 @@ Tabs.Guardado:Button({
                     if decoded.Toggles["Equipar pistola"] ~= nil then equipGunEnabled = decoded.Toggles["Equipar pistola"] secureLoadToggle(UIElements.TogEquipGun, equipGunEnabled) end
                     if decoded.Toggles["Silent Aim (Manual)"] ~= nil then silentAimManualEnabled = decoded.Toggles["Silent Aim (Manual)"] secureLoadToggle(UIElements.TogSilentAimManual, silentAimManualEnabled) end
                     if decoded.Toggles["Silent Aim (FOV)"] ~= nil then silentAimFovEnabled = decoded.Toggles["Silent Aim (FOV)"] secureLoadToggle(UIElements.TogSilentAimFOV, silentAimFovEnabled) end
-                    if decoded.Toggles["Mostrar CÃ­rculo FOV"] ~= nil then fovVisiblePreference = decoded.Toggles["Mostrar CÃ­rculo FOV"] secureLoadToggle(UIElements.TogShowFOV, fovVisiblePreference) end
+                    if decoded.Toggles["Mostrar CÃƒÂ­rculo FOV"] ~= nil then fovVisiblePreference = decoded.Toggles["Mostrar CÃƒÂ­rculo FOV"] secureLoadToggle(UIElements.TogShowFOV, fovVisiblePreference) end
                     if decoded.Toggles["ESP Jugadores"] ~= nil then espEnabled = decoded.Toggles["ESP Jugadores"] secureLoadToggle(UIElements.TogEsp, espEnabled) end
                     if decoded.Toggles["ESP Glow"] ~= nil then espSettings.Glow = decoded.Toggles["ESP Glow"] secureLoadToggle(UIElements.TogEspGl, espSettings.Glow) end
                     if decoded.Toggles["Kill All"] ~= nil then
@@ -4126,8 +4160,8 @@ Tabs.Guardado:Button({
                     end
                 end
                 if decoded.Sliders then
-                    if decoded.Sliders["TamaÃ±o del FOV"] ~= nil then fovRadius = decoded.Sliders["TamaÃ±o del FOV"] secureLoadToggle(UIElements.SliFOVSize, fovRadius) end
-                    if decoded.Sliders["TamaÃ±o de Hitbox"] ~= nil then hitboxSize = decoded.Sliders["TamaÃ±o de Hitbox"] end
+                    if decoded.Sliders["TamaÃƒÂ±o del FOV"] ~= nil then fovRadius = decoded.Sliders["TamaÃƒÂ±o del FOV"] secureLoadToggle(UIElements.SliFOVSize, fovRadius) end
+                    if decoded.Sliders["TamaÃƒÂ±o de Hitbox"] ~= nil then hitboxSize = decoded.Sliders["TamaÃƒÂ±o de Hitbox"] end
                     if decoded.Sliders["Volumen Kill Sound"] ~= nil then
                         KillSoundVolume = decoded.Sliders["Volumen Kill Sound"]
                         KillSoundPlayer.Volume = KillSoundVolume
@@ -4164,12 +4198,12 @@ Tabs.Guardado:Button({
                         pcall(function() WindUI:SetTheme(SelectedTheme) end)
                     end
                 end
-                showBottomMessage("'" .. selectedConfig .. "' cargada con Ã©xito.")
+                showBottomMessage("'" .. selectedConfig .. "' cargada con ÃƒÂ©xito.")
             else
                 showBottomMessage("Error al leer el archivo.")
             end
         else
-            showBottomMessage("La configuraciÃ³n no existe.")
+            showBottomMessage("La configuraciÃƒÂ³n no existe.")
         end
     end
 })
@@ -4180,8 +4214,8 @@ task.spawn(function()
 end)
 
 local fechaUpdate = "04/10/2026"
-local cosasAgregadas = { "DetecciÃ³n de aliados mejorada", "Sistema optimizado", "Mejor rendimiento Jeje", "Kill All(Fase Beta)", "Auto Farm evento mejorado", "Equipar pistola automÃ¡tico" }
-local cosasArregladas = { "Aimbot y Hitbox arreglados", "Autoshoot arreglado", "ESP arreglado", "Animaciones arregladas", "Sonido de kill instantÃ¡neo" }
+local cosasAgregadas = { "DetecciÃƒÂ³n de aliados mejorada", "Sistema optimizado", "Mejor rendimiento Jeje", "Kill All(Fase Beta)", "Auto Farm evento mejorado", "Equipar pistola automÃƒÂ¡tico" }
+local cosasArregladas = { "Aimbot y Hitbox arreglados", "Autoshoot arreglado", "ESP arreglado", "Animaciones arregladas", "Sonido de kill instantÃƒÂ¡neo" }
 
 local function buildUpdateText()
     local lineas = {}
@@ -4200,6 +4234,6 @@ end
 Tabs.Update:Section({ Title = "Actualizaciones", Icon = "solar:cloud-download-bold" })
 
 local updatePara = Tabs.Update:Paragraph({
-    Title = "Ãšltima actualizaciÃ³n: " .. fechaUpdate,
+    Title = "ÃƒÅ¡ltima actualizaciÃƒÂ³n: " .. fechaUpdate,
     Desc = buildUpdateText()
 })
